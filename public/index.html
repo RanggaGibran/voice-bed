@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Voicebed Gateway</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>Voicebed Browser Bridge</h1>
+        <p class="lead">
+          Gunakan halaman ini untuk menghubungkan Minecraft Bedrock Edition dengan Simple Voice Chat server Anda.
+        </p>
+      </header>
+
+      <section class="card">
+        <h2>Kode Sesi</h2>
+        <p>
+          Masukkan kode berikut di dalam gim dengan perintah
+          <code>/voicebed &lt;kode&gt;</code>:
+        </p>
+        <div class="session-code" id="session-code">-- -- --</div>
+        <p class="status" id="link-status">Menunggu koneksi browser…</p>
+      </section>
+
+      <section class="card">
+        <h2>Sesi Voice Chat</h2>
+        <p id="player-label">Belum tersambung ke pemain.</p>
+        <button id="start-button" disabled>Mulai Voice Chat</button>
+        <p class="status" id="microphone-status"></p>
+      </section>
+
+      <section class="card">
+        <h2>Debug</h2>
+        <pre id="debug-log"></pre>
+      </section>
+    </main>
+
+    <script src="client.js"></script>
+  </body>
+</html>
