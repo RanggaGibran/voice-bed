@@ -1,14 +1,16 @@
 {
-  "name": "voicechat-web",
-  "version": "0.1.0",
-  "description": "Web gateway that bridges Bedrock browser clients with Simple Voice Chat",
-  "main": "server.js",
+  "name": "starter-template",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/main.js",
+  "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "format": "prettier --write ."
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "nanoid": "^4.0.2",
-    "ws": "^8.16.0"
+    "node-appwrite": "^14.1.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.2.5"
   }
 }
