@@ -1,16 +1,14 @@
 {
-  "name": "starter-template",
-  "version": "1.0.0",
-  "description": "",
-  "main": "src/main.js",
+  "name": "voicechat-web",
+  "version": "0.1.0",
   "type": "module",
+  "main": "server.js",
   "scripts": {
-    "format": "prettier --write ."
+    "start": "node server.js"
   },
   "dependencies": {
-    "node-appwrite": "^14.1.0"
-  },
-  "devDependencies": {
-    "prettier": "^3.2.5"
+    "express": "^4.19.2",
+    "ws": "^8.16.0",
+    "nanoid": "^4.0.2"
   }
 }
