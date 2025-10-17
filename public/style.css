@@ -52,6 +52,14 @@ header {
   font-size: 0.95rem;
 }
 
+.button-row {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
 button {
   appearance: none;
   border: none;
