@@ -1,8 +1,10 @@
-const path = require('path');
-const express = require('express');
-const { createServer } = require('http');
-const { WebSocketServer } = require('ws');
-const { customAlphabet } = require('nanoid');
+import path from 'path';
+import express from 'express';
+import { createServer } from 'http';
+import { WebSocketServer } from 'ws';
+import { customAlphabet } from 'nanoid';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
 const port = Number(process.env.PORT || 3000);
 const browserPath = '/browser';
@@ -11,6 +13,9 @@ const pluginPath = '/plugin';
 const app = express();
 const server = createServer(app);
 const generateCode = customAlphabet('0123456789', 6);
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
