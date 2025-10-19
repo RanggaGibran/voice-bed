@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Voicebed">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#8b5cf6" />
+    </linearGradient>
+    <linearGradient id="wave" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#22d3ee" />
+      <stop offset="100%" stop-color="#c084fc" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="120" fill="url(#bg)" />
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M144 328c28-22 56-66 88-66s60 44 88 44 60-44 88-66" stroke="rgba(255,255,255,0.22)" stroke-width="32" />
+    <path d="M144 348c28-22 56-66 88-66s60 44 88 44 60-44 88-66" stroke="rgba(15,23,42,0.18)" stroke-width="28" />
+    <path d="M156 340c24-20 52-60 76-60s52 40 76 40 52-40 76-60" stroke="url(#wave)" stroke-width="24" />
+  </g>
+  <g fill="none" stroke="#f8fafc" stroke-linecap="round" stroke-width="24">
+    <path d="M156 196v80" />
+    <path d="M202 164v148" />
+    <path d="M250 132v212" />
+    <path d="M298 164v148" />
+    <path d="M346 196v80" />
+  </g>
+</svg>

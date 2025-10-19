@@ -28,10 +28,15 @@ const pluginClients = new Set();
 const webmExtractor = new WebMOpusExtractor();
 const oggWrapper = new OggOpusWrapper();
 
-const MAX_FRAMES_PER_CHUNK = Number(process.env.VOICEBED_FRAMES_PER_CHUNK || 4);
+const MAX_FRAMES_PER_CHUNK = Number(process.env.VOICEBED_FRAMES_PER_CHUNK || 2);
 const MAX_CHUNK_DELAY_MS = Number(process.env.VOICEBED_CHUNK_DELAY_MS || 60);
+const MIN_FLUSH_DELAY_MS = Number(process.env.VOICEBED_MIN_FLUSH_DELAY_MS || 35);
+const SMALL_FRAME_TARGET = Number(process.env.VOICEBED_SMALL_FRAME_TARGET || 3);
+const MIN_TINY_FLUSH_DELAY_MS = Number(process.env.VOICEBED_MIN_TINY_FLUSH_DELAY_MS || 45);
+const SMALL_FRAME_THRESHOLD_BYTES = Number(process.env.VOICEBED_SMALL_FRAME_THRESHOLD || 80);
 const speakerFrameBuffers = new Map();
 const PCM_FRAME_SIZE = 960;
+const MAX_PENDING_PCM_CHUNKS = Number(process.env.VOICEBED_PENDING_PCM_CHUNKS || 60);
 
 const getSpeakerKey = (sessionCode, speaker = {}) => {
   const identity = speaker.uuid || speaker.name || 'unknown';
@@ -98,6 +103,35 @@ const flushSpeakerBuffer = (key) => {
   }
 };
 
+const flushPendingPcmChunks = (session) => {
+  if (!session || !session.pluginClient || !Array.isArray(session.pendingPcmChunks)) {
+    return;
+  }
+  if (!session.pendingPcmChunks.length) {
+    return;
+  }
+  const ws = session.pluginClient.ws;
+  if (!ws || ws.readyState !== ws.OPEN) {
+    return;
+  }
+  const chunks = session.pendingPcmChunks.splice(0);
+  for (const chunk of chunks) {
+    sendJson(ws, {
+      type: 'pcm_chunk',
+      code: session.code,
+      data: chunk.data,
+      timestamp: chunk.timestamp ?? Date.now(),
+      format: 'pcm16',
+      samples: chunk.samples ?? PCM_FRAME_SIZE,
+      sampleRate: chunk.sampleRate ?? 48000,
+    });
+  }
+  console.info('[gateway] flushed pending pcm chunks to plugin', {
+    code: session.code,
+    count: chunks.length,
+  });
+};
+
 const enqueueSpeakerFrame = (session, message, rawOpus) => {
   const key = getSpeakerKey(session.code, message.speaker);
   let entry = speakerFrameBuffers.get(key);
@@ -120,11 +154,20 @@ const enqueueSpeakerFrame = (session, message, rawOpus) => {
     clearTimeout(entry.timeout);
   }
 
-  if (entry.frames.length >= MAX_FRAMES_PER_CHUNK) {
+  const isTinyFrame = rawOpus.length <= SMALL_FRAME_THRESHOLD_BYTES;
+  const targetBatch = isTinyFrame ? SMALL_FRAME_TARGET : MAX_FRAMES_PER_CHUNK;
+
+  if (entry.frames.length >= targetBatch) {
     flushSpeakerBuffer(key);
-  } else {
-    entry.timeout = setTimeout(() => flushSpeakerBuffer(key), MAX_CHUNK_DELAY_MS);
+    return;
   }
+
+  const delay = entry.frames.length === 1
+    ? (isTinyFrame ? MIN_TINY_FLUSH_DELAY_MS : MIN_FLUSH_DELAY_MS)
+    : MAX_CHUNK_DELAY_MS;
+
+  const clampedDelay = Math.min(delay, MAX_CHUNK_DELAY_MS);
+  entry.timeout = setTimeout(() => flushSpeakerBuffer(key), clampedDelay);
 };
 
 function isValidSessionCode(code) {
@@ -175,6 +218,7 @@ function updateSessionCode(session, newCode, { resetLink } = { resetLink: true }
   if (resetLink) {
     session.player = null;
     session.pluginClient = null;
+    session.pendingPcmChunks = [];
   }
   browserSessions.set(newCode, session);
   return true;
@@ -187,6 +231,7 @@ function createBrowserSession(ws, requestedCode) {
     createdAt: Date.now(),
     player: null,
     pluginClient: null,
+    pendingPcmChunks: [],
   };
   browserSessions.set(session.code, session);
   if (isValidSessionCode(requestedCode)) {
@@ -211,6 +256,7 @@ function linkSessionWithPlayer(session, message, pluginClient) {
   });
   sendJson(pluginClient.ws, { type: 'link_ack', code: session.code, status: 'linked' });
   sendJson(session.ws, { type: 'session_linked', player: message.player });
+  flushPendingPcmChunks(session);
 }
 
 function handleRerollRequest(session) {
@@ -266,24 +312,21 @@ async function handleBrowserMessage(session, data) {
       sendJson(session.ws, { type: 'pong' });
       break;
     case 'audio_chunk':
-      console.info('[browser] audio_chunk received', { 
-        code: session.code, 
+      console.info('[browser] audio_chunk received', {
+        code: session.code,
         hasData: !!message.data,
         dataLength: message.data?.length || 0,
-        hasPlugin: !!session.pluginClient 
+        hasPlugin: !!session.pluginClient,
+        format: message.format,
       });
       if (session.pluginClient) {
         try {
-          // Decode base64 WebM data
           const webmData = Buffer.from(message.data, 'base64');
-          console.info('[browser] WebM data decoded', { size: webmData.length });
-          
-          // Extract raw Opus frames from WebM container
+          console.info('[browser] WebM/Opus data decoded', { size: webmData.length });
+
           const opusFrames = await webmExtractor.extractOpusFrames(webmData);
           console.info('[browser] Extracted Opus frames', { count: opusFrames.length });
-          
-          // Send each Opus frame to plugin
-          // Filter out invalid frames (valid Opus voice frames are 60-960 bytes)
+
           const validFrames = opusFrames.filter(frame => frame.length > 0 && frame.length <= 1500);
 
           if (validFrames.length !== opusFrames.length) {
@@ -294,13 +337,34 @@ async function handleBrowserMessage(session, data) {
             });
           }
 
-          if (validFrames.length > 0) {
-            console.info('[browser] Opus frames ready for plugin', {
-              code: session.code,
-              lengths: validFrames.map(frame => frame.length)
+          if (validFrames.length === 0) {
+            console.warn('[browser] No valid Opus frames (min 20 bytes)', {
+              extracted: opusFrames.length
             });
+            return;
           }
-          
+
+          // Try to reuse PCM path by decoding to PCM via Ogg wrapper
+          if (validFrames.length === 1 && message.format === 'ogg_opus_fallback') {
+            console.info('[browser] Decoding single Opus frame fallback to PCM', {
+              length: validFrames[0].length,
+            });
+            try {
+              const oggBuffer = oggWrapper.wrapInOgg(validFrames, 48000);
+              const oggBase64 = oggBuffer.toString('base64');
+              sendJson(session.pluginClient.ws, {
+                type: 'audio_chunk',
+                code: session.code,
+                data: oggBase64,
+                timestamp: Date.now(),
+                format: 'ogg_opus',
+              });
+              return;
+            } catch (wrapError) {
+              console.error('[browser] Failed to wrap fallback Opus frame in Ogg', wrapError);
+            }
+          }
+
           for (const opusFrame of validFrames) {
             const payload = {
               type: 'audio_chunk',
@@ -310,20 +374,14 @@ async function handleBrowserMessage(session, data) {
             };
             sendJson(session.pluginClient.ws, payload);
           }
-          
-          if (validFrames.length > 0) {
-            console.info('[browser] audio_chunk forwarded to plugin', { 
-              code: session.code,
-              pluginId: session.pluginClient.id,
-              opusFrames: validFrames.length,
-              totalExtracted: opusFrames.length,
-              filteredOut: opusFrames.length - validFrames.length
-            });
-          } else {
-            console.warn('[browser] No valid Opus frames (min 20 bytes)', {
-              extracted: opusFrames.length
-            });
-          }
+
+          console.info('[browser] audio_chunk forwarded to plugin', {
+            code: session.code,
+            pluginId: session.pluginClient.id,
+            opusFrames: validFrames.length,
+            totalExtracted: opusFrames.length,
+            filteredOut: opusFrames.length - validFrames.length
+          });
         } catch (error) {
           console.error('[browser] Error processing audio:', error);
         }
@@ -331,31 +389,48 @@ async function handleBrowserMessage(session, data) {
         console.warn('[browser] audio_chunk dropped: no plugin client', { code: session.code });
       }
       break;
-    case 'pcm_chunk':
+    case 'pcm_chunk': {
       if (!message.data) {
         console.warn('[browser] pcm_chunk missing data', { code: session.code });
         return;
       }
-      if (!session.pluginClient) {
-        console.warn('[browser] pcm_chunk dropped: no plugin client', { code: session.code });
-        return;
-      }
-      console.info('[browser] forwarding pcm_chunk to plugin', {
-        code: session.code,
-        samples: message.samples,
-        sampleRate: message.sampleRate,
-        dataLength: message.data?.length
-      });
-      sendJson(session.pluginClient.ws, {
-        type: 'audio_chunk',
-        code: session.code,
+      const chunk = {
         data: message.data,
         timestamp: message.timestamp ?? Date.now(),
-        format: 'pcm16',
         samples: message.samples ?? PCM_FRAME_SIZE,
         sampleRate: message.sampleRate ?? 48000,
-      });
+      };
+      if (session.pluginClient && session.pluginClient.ws.readyState === session.pluginClient.ws.OPEN) {
+        console.info('[browser] forwarding pcm_chunk to plugin', {
+          code: session.code,
+          samples: chunk.samples,
+          sampleRate: chunk.sampleRate,
+          dataLength: chunk.data?.length
+        });
+        sendJson(session.pluginClient.ws, {
+          type: 'pcm_chunk',
+          code: session.code,
+          data: chunk.data,
+          timestamp: chunk.timestamp,
+          format: 'pcm16',
+          samples: chunk.samples,
+          sampleRate: chunk.sampleRate,
+        });
+      } else {
+        if (!Array.isArray(session.pendingPcmChunks)) {
+          session.pendingPcmChunks = [];
+        }
+        session.pendingPcmChunks.push(chunk);
+        if (session.pendingPcmChunks.length > MAX_PENDING_PCM_CHUNKS) {
+          session.pendingPcmChunks.splice(0, session.pendingPcmChunks.length - MAX_PENDING_PCM_CHUNKS);
+        }
+        console.info('[browser] pcm_chunk buffered waiting for plugin', {
+          code: session.code,
+          buffered: session.pendingPcmChunks.length,
+        });
+      }
       break;
+    }
     case 'reroll_request':
       handleRerollRequest(session);
       break;
@@ -502,12 +577,28 @@ function handlePluginMessage(pluginClient, rawData) {
             console.warn('[plugin] Empty Opus data received');
             return;
           }
-          
-          // Validate Opus frame size
-          if (rawOpus.length < 60 || rawOpus.length > 1500) {
-            console.warn('[plugin] Invalid Opus frame size', { 
+
+          if (rawOpus.length < 3) {
+            console.warn('[plugin] Invalid Opus frame size', {
               size: rawOpus.length,
-              speaker: message.speaker?.name 
+              speaker: message.speaker?.name,
+              reason: 'frame_too_small'
+            });
+            return;
+          }
+
+          if (rawOpus.length < 60) {
+            console.info('[plugin] Small Opus frame accepted', {
+              size: rawOpus.length,
+              speaker: message.speaker?.name
+            });
+          }
+
+          if (rawOpus.length > 1500) {
+            console.warn('[plugin] Invalid Opus frame size', {
+              size: rawOpus.length,
+              speaker: message.speaker?.name,
+              reason: 'frame_too_large'
             });
             return;
           }
