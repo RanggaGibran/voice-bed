@@ -16,7 +16,6 @@
   const installHintEl = document.getElementById('install-hint');
   const installCardEl = document.getElementById('install-card');
 
-  let socket;
   let mediaStream;
   let currentSecret;
   let currentVoiceConfig;
@@ -301,22 +300,6 @@
       return location.origin;
     }
     return undefined;
-  };
-
-  const resolveWebSocketUrl = () => {
-    const origin = getConfiguredGatewayOrigin();
-    if (!origin) {
-      return undefined;
-    }
-    try {
-      const base = new URL(origin);
-      const endpoint = new URL('/browser', base);
-      endpoint.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
-      return endpoint.toString();
-    } catch (error) {
-      log('Gateway origin tidak valid', { origin, error: error.message });
-      return undefined;
-    }
   };
 
   const requestNativeGatewaySettings = () => {
@@ -964,13 +947,10 @@
     if (!pendingMicChunks.length) {
       return;
     }
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      return;
-    }
     const chunks = pendingMicChunks.splice(0);
-    chunks.forEach((chunk) => {
+    chunks.forEach(async (chunk) => {
       try {
-        socket.send(JSON.stringify(chunk));
+        await sendMessage(chunk);
       } catch (error) {
         log('Gagal mengirim chunk mikrofon yang tertahan', { error: error.message });
       }
@@ -1512,9 +1492,6 @@
   };
 
   rerollButtonEl.addEventListener('click', () => {
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      return;
-    }
     rerollButtonEl.disabled = true;
     
     // Reset everything before requesting new code
@@ -1583,9 +1560,6 @@
     stopStreamingAudio();
     if (mediaStream) {
       mediaStream.getTracks().forEach(track => track.stop());
-    }
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.close();
     }
     // Cleanup all active audio
     activeSpeakers.forEach(audio => {
