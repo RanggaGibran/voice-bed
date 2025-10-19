@@ -1,0 +1,23 @@
+{
+  "name": "Voicebed Bridge",
+  "short_name": "Voicebed",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "description": "Hubungkan Minecraft Bedrock ke Simple Voice Chat dengan mudah di perangkat Anda.",
+  "icons": [
+    {
+      "src": "icons/voicebed.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/voicebed.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512",
+      "purpose": "any"
+    }
+  ]
+}

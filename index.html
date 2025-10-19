@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#0b1220" />
+    <title>Voicebed Gateway</title>
+    <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  </head>
+  <body>
+    <div class="page">
+      <main class="layout">
+        <header class="hero card">
+          <div class="hero-badge">Bridge</div>
+          <h1>Voicebed Browser Bridge</h1>
+          <p class="lead">
+            Hubungkan Minecraft Bedrock Edition langsung ke server Simple Voice Chat Anda. Ikuti langkah di bawah untuk mulai berbicara tanpa hambatan.
+          </p>
+          <div class="hero-actions">
+            <span class="pill" id="connection-pill">Menunggu koneksi…</span>
+            <button id="install-button" type="button" class="ghost hidden">Pasang sebagai Aplikasi</button>
+          </div>
+        </header>
+
+        <section class="grid">
+          <article class="card card-session">
+            <div class="card-header">
+              <div>
+                <h2>Kode Sesi</h2>
+                <p class="muted">Masukkan kode ini di dalam gim dengan perintah <code>/voicebed &lt;kode&gt;</code>.</p>
+              </div>
+              <div class="card-header-actions">
+                <button id="copy-code-button" type="button" class="ghost" disabled>Salin</button>
+                <button id="reroll-button" type="button" class="ghost" disabled>Reroll</button>
+              </div>
+            </div>
+            <div class="session-code" id="session-code">------</div>
+            <p class="status" id="link-status">Menunggu koneksi browser…</p>
+          </article>
+
+          <article class="card card-status">
+            <div class="card-header">
+              <div>
+                <h2>Status Voice Chat</h2>
+                <p class="muted">Pastikan audio tersambung sebelum kembali ke gim.</p>
+              </div>
+            </div>
+            <div class="status-block">
+              <p class="status-label" id="player-label">Belum tersambung ke pemain.</p>
+              <p class="status secondary" id="microphone-status"></p>
+              <button id="audio-unlock-button" type="button" class="primary hidden">Aktifkan Audio / Mikrofon</button>
+            </div>
+          </article>
+        </section>
+
+        <section class="card card-instructions">
+          <div class="card-header">
+            <div>
+              <h2>Langkah Cepat</h2>
+              <p class="muted">Ikuti urutan berikut agar sambungan bekerja di PC maupun perangkat mobile.</p>
+            </div>
+          </div>
+          <ol class="steps">
+            <li>
+              <span class="step-number">1</span>
+              <div>
+                <h3>Buka halaman ini di perangkat Bedrock</h3>
+                <p>Pastikan audio perangkat tidak dalam mode senyap. Untuk mobile, tambahkan halaman ini ke layar utama agar berjalan penuh.</p>
+              </div>
+            </li>
+            <li>
+              <span class="step-number">2</span>
+              <div>
+                <h3>Masukkan kode sesi dari Minecraft</h3>
+                <p>Jalankan <code>/voicebed &lt;kode&gt;</code> di chat gim. Status sambungan akan diperbarui secara otomatis.</p>
+              </div>
+            </li>
+            <li>
+              <span class="step-number">3</span>
+              <div>
+                <h3>Aktifkan mikrofon bila diminta</h3>
+                <p>Ketuk tombol <strong>Aktifkan Audio / Mikrofon</strong> jika tampil, lalu kembali ke gim setelah status hijau.</p>
+              </div>
+            </li>
+          </ol>
+        </section>
+
+        <section class="card card-install" id="install-card">
+          <div class="card-header">
+            <div>
+              <h2>Pasang Tanpa Play Store</h2>
+              <p class="muted">Tambahkan Voicebed ke layar utama langsung dari browser agar tetap berjalan seperti aplikasi native.</p>
+            </div>
+          </div>
+          <div class="install-grid">
+            <article>
+              <h3>Android (Chrome / Edge)</h3>
+              <ol>
+                <li>Buka menu ⋮ di pojok kanan atas.</li>
+                <li>Pilih <strong>Tambahkan ke layar utama</strong> atau <strong>Instal aplikasi</strong>.</li>
+                <li>Konfirmasi nama aplikasi, lalu tekan <strong>Tambahkan</strong>.</li>
+              </ol>
+            </article>
+            <article>
+              <h3>iPhone / iPad (Safari)</h3>
+              <ol>
+                <li>Ketuk tombol <strong>Bagikan</strong> (ikon panah ke atas).</li>
+                <li>Pilih <strong>Add to Home Screen</strong> / <strong>Tambahkan ke Layar Utama</strong>.</li>
+                <li>Tekan <strong>Add</strong>, kemudian buka dari ikon baru.</li>
+              </ol>
+            </article>
+            <article>
+              <h3>Desktop (Chrome / Edge)</h3>
+              <ol>
+                <li>Perhatikan ikon <strong>Install</strong> (monitor dengan panah) di address bar.</li>
+                <li>Klik ikon tersebut, lalu pilih <strong>Install</strong>.</li>
+                <li>Voicebed akan muncul sebagai jendela terpisah seperti aplikasi native.</li>
+              </ol>
+            </article>
+          </div>
+          <p class="muted install-hint hidden" id="install-hint">Jika tombol "Pasang sebagai Aplikasi" muncul di atas, Anda bisa menekannya untuk memicu instalasi otomatis atau melihat panduan pemasangan.</p>
+        </section>
+
+        <section class="card card-tips">
+          <div class="card-header">
+            <div>
+              <h2>Tips Singkat</h2>
+              <p class="muted">Optimalkan performa dan kualitas suara.</p>
+            </div>
+          </div>
+          <ul class="tips-list">
+            <li>Biarkan halaman ini terbuka; menutupnya akan memutuskan sambungan suara.</li>
+            <li>Gunakan earphone atau headset untuk mengurangi echo dan menjaga kualitas.</li>
+            <li>Jika suara terdengar robotik, cek koneksi internet dan pastikan perangkat berada dekat dengan router.</li>
+            <li>Untuk pengalaman terbaik di Android, jalankan halaman ini dari ikon layar utama (mode aplikasi) supaya suara tetap berjalan tanpa split screen.</li>
+          </ul>
+        </section>
+
+        <section class="card card-debug collapsed" id="debug-panel">
+          <div class="card-header">
+            <div>
+              <h2>Log Debug</h2>
+              <p class="muted">Hanya diperlukan saat melakukan troubleshooting.</p>
+            </div>
+            <button id="debug-toggle-button" type="button" class="ghost" aria-expanded="false">Tampilkan debug log</button>
+          </div>
+          <div class="card-body">
+            <pre id="debug-log" aria-live="polite"></pre>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <p>Voicebed &mdash; jembatan antara Bedrock dan Java Voice Chat. Dibuat untuk server komunitas Anda.</p>
+      </footer>
+    </div>
+
+    <script src="client.js"></script>
+  </body>
+</html>
