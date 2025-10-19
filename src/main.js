@@ -1,4 +1,5 @@
 import { Client, Databases } from 'node-appwrite';
+import { customAlphabet } from 'nanoid';
 
 // This Appwrite function will be executed every time your function is triggered
 export default async ({ req, res, log, error }) => {
@@ -13,6 +14,8 @@ export default async ({ req, res, log, error }) => {
   const databaseId = process.env.VOICEBED_DATABASE_ID || 'voicebed';
   const sessionsCollectionId = process.env.VOICEBED_SESSIONS_COLLECTION || 'sessions';
 
+  const generateCode = customAlphabet('0123456789', 6);
+
   try {
     const path = req.path;
     const method = req.method;
@@ -25,6 +28,18 @@ export default async ({ req, res, log, error }) => {
       // Handle browser messages (simulate WebSocket)
       const body = JSON.parse(req.body || '{}');
       log('Browser message received', body);
+
+      if (body.type === 'generate_code') {
+        const code = generateCode();
+        // Store session code
+        await databases.createDocument(databaseId, sessionsCollectionId, 'unique()', {
+          type: 'session_code',
+          sessionCode: code,
+          message: { type: 'session_code', code },
+          timestamp: new Date().toISOString(),
+        });
+        return res.json({ type: 'session_code', code });
+      }
 
       // Store message in database for Realtime
       const sessionCode = body.sessionCode || 'default';

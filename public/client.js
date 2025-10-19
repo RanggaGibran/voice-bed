@@ -753,7 +753,6 @@
   });
 
   window.addEventListener('beforeinstallprompt', (event) => {
-    event.preventDefault();
     deferredInstallPrompt = event;
     reportInstallEvent({ stage: 'prompt_ready' });
     updateInstallButtonState();
@@ -1001,14 +1000,16 @@
       });
       const result = await response.json();
       log('Message sent', result);
+      return result;
     } catch (error) {
       log('Failed to send message', { error: error.message });
+      return null;
     }
   };
 
   let activeGatewayOrigin = getConfiguredGatewayOrigin();
 
-  const connect = () => {
+  const connect = async () => {
     const origin = getConfiguredGatewayOrigin();
     if (!origin) {
       linkStatusEl.textContent = 'Gateway belum dikonfigurasi. Buka pengaturan Voicebed untuk memasukkan URL gateway.';
@@ -1047,9 +1048,11 @@
     const savedCode = readSessionCookie();
     if (savedCode && savedCode === currentSessionCode) {
       linkStatusEl.textContent = 'Koneksi dipulihkan. Menunggu sinkronisasi...';
-      sendMessage({ type: 'restore_session', code: savedCode });
+      const result = await sendMessage({ type: 'restore_session', code: savedCode });
+      if (result) handleMessage(result);
     } else {
-      sendMessage({ type: 'generate_code' });
+      const result = await sendMessage({ type: 'generate_code' });
+      if (result) handleMessage(result);
     }
   };
 
