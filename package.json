@@ -2,7 +2,7 @@
   "name": "voicechat-web",
   "version": "0.1.0",
   "type": "module",
-  "main": "src/main.js",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },

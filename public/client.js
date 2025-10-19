@@ -16,6 +16,7 @@
   const installHintEl = document.getElementById('install-hint');
   const installCardEl = document.getElementById('install-card');
 
+  let socket;
   let mediaStream;
   let currentSecret;
   let currentVoiceConfig;
@@ -64,12 +65,6 @@
   const LOCAL_STORAGE_GATEWAY_KEY = 'voicebed.gatewayOrigin';
   const INSTALL_INSTRUCTIONS_LABEL = 'Lihat cara memasang';
   const MEDIA_RECORDER_MAX_DECODE_FAILURES = 3;
-
-  // Appwrite setup
-  const appwriteClient = new Appwrite.Client();
-  appwriteClient.setEndpoint('https://cloud.appwrite.io/v1').setProject(process.env.APPWRITE_PROJECT_ID || 'your-project-id'); // Ganti dengan project ID Anda
-  const realtime = new Appwrite.Realtime(appwriteClient);
-  const databases = new Appwrite.Databases(appwriteClient);
 
   const defaultCopyButtonLabel = copyCodeButtonEl?.textContent?.trim() || 'Salin';
   const defaultInstallButtonLabel = installButtonEl?.textContent?.trim() || 'Pasang sebagai Aplikasi';
@@ -300,6 +295,22 @@
       return location.origin;
     }
     return undefined;
+  };
+
+  const resolveWebSocketUrl = () => {
+    const origin = getConfiguredGatewayOrigin();
+    if (!origin) {
+      return undefined;
+    }
+    try {
+      const base = new URL(origin);
+      const endpoint = new URL('/browser', base);
+      endpoint.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
+      return endpoint.toString();
+    } catch (error) {
+      log('Gateway origin tidak valid', { origin, error: error.message });
+      return undefined;
+    }
   };
 
   const requestNativeGatewaySettings = () => {
@@ -736,6 +747,7 @@
   });
 
   window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
     deferredInstallPrompt = event;
     reportInstallEvent({ stage: 'prompt_ready' });
     updateInstallButtonState();
@@ -947,10 +959,13 @@
     if (!pendingMicChunks.length) {
       return;
     }
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
     const chunks = pendingMicChunks.splice(0);
-    chunks.forEach(async (chunk) => {
+    chunks.forEach((chunk) => {
       try {
-        await sendMessage(chunk);
+        socket.send(JSON.stringify(chunk));
       } catch (error) {
         log('Gagal mengirim chunk mikrofon yang tertahan', { error: error.message });
       }
@@ -971,27 +986,21 @@
     }
   };
 
-  const sendMessage = async (message) => {
-    try {
-      const response = await fetch('/browser', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...message, sessionCode: currentSessionCode }),
-      });
-      const result = await response.json();
-      log('Message sent', result);
-      return result;
-    } catch (error) {
-      log('Failed to send message', { error: error.message });
-      return null;
+  const sendMessage = (message) => {
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(message));
+      return;
+    }
+    if (message.type === 'pcm_chunk') {
+      enqueuePendingMicChunk(message);
     }
   };
 
   let activeGatewayOrigin = getConfiguredGatewayOrigin();
 
-  const connect = async () => {
-    const origin = getConfiguredGatewayOrigin();
-    if (!origin) {
+  const connect = () => {
+    const wsUrl = resolveWebSocketUrl();
+    if (!wsUrl) {
       linkStatusEl.textContent = 'Gateway belum dikonfigurasi. Buka pengaturan Voicebed untuk memasukkan URL gateway.';
       setConnectionState('error', 'Gateway belum diatur');
       log('Koneksi dibatalkan karena gateway origin tidak tersedia');
@@ -1000,40 +1009,135 @@
       return;
     }
 
-    activeGatewayOrigin = origin;
+    activeGatewayOrigin = getConfiguredGatewayOrigin();
     setConnectionState('connecting', 'Menghubungkan…');
     rerollButtonEl.disabled = true;
-    try {
-      const hostLabel = new URL(activeGatewayOrigin).host;
-      linkStatusEl.textContent = `Menghubungkan ke gateway ${hostLabel}…`;
-    } catch (error) {
+    if (activeGatewayOrigin) {
+      try {
+        const hostLabel = new URL(activeGatewayOrigin).host;
+        linkStatusEl.textContent = `Menghubungkan ke gateway ${hostLabel}…`;
+      } catch (error) {
+        linkStatusEl.textContent = 'Menghubungkan ke gateway…';
+      }
+    } else {
       linkStatusEl.textContent = 'Menghubungkan ke gateway…';
     }
-    log('Connecting to Appwrite Realtime', { origin: activeGatewayOrigin });
+    log('Membuka koneksi WebSocket', { url: wsUrl, origin: activeGatewayOrigin });
 
-    // Subscribe to Realtime for session updates
-    const unsubscribe = realtime.subscribe('databases.voicebed.collections.sessions.documents', (response) => {
-      log('Realtime event', response);
-      const payload = response.payload;
-      if (payload.sessionCode === currentSessionCode) {
-        handleMessage(payload.message);
+    socket = new WebSocket(wsUrl);
+
+    socket.addEventListener('open', () => {
+      setConnectionState('connected', 'Browser terhubung');
+      log('Browser socket connected');
+      reconnectAttempts = 0; // Reset counter on successful connection
+      
+      // Start heartbeat to keep connection alive
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+      }
+      heartbeatInterval = setInterval(() => {
+        if (socket?.readyState === WebSocket.OPEN) {
+          sendMessage({ type: 'ping' });
+        }
+      }, 30000); // Ping every 30 seconds
+
+      flushPendingMicChunks();
+      
+      // Check if we have a previous session to restore
+      const savedCode = readSessionCookie();
+      if (savedCode && savedCode === currentSessionCode) {
+        // We were already in a session before disconnect
+        linkStatusEl.textContent = 'Koneksi dipulihkan. Menunggu sinkronisasi...';
+        log('Reconnected with existing session', { code: savedCode });
+        
+        // Restart audio streaming if we had voice config
+        if (currentVoiceConfig && micPermissionGranted && !micProcessor) {
+          startStreamingAudio().catch(err => {
+            log('Failed to restart audio after reconnect', { error: err.message });
+          });
+        }
+      } else {
+        linkStatusEl.textContent = 'Menunggu perintah /voicebed dari dalam gim…';
       }
     });
 
-    setConnectionState('connected', 'Browser terhubung');
-    log('Realtime connected');
-    reconnectAttempts = 0;
+    socket.addEventListener('message', (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        log('Incoming message', message);
+        switch (message.type) {
+          case 'session_code':
+            updateSessionCode(message);
+            break;
+          case 'session_linked':
+            handleSessionLinked(message);
+            break;
+          case 'voice_credentials':
+            handleVoiceCredentials(message.payload ?? {});
+            break;
+          case 'plugin_disconnected':
+            handlePluginDisconnected();
+            break;
+          case 'session_closed':
+            linkStatusEl.textContent = 'Sesi berakhir.';
+            rerollButtonEl.disabled = true;
+            clearSessionCookie();
+            currentSessionCode = undefined;
+            resetSessionState();
+            updateSessionCodeDisplay();
+            setConnectionState('warning', 'Sesi ditutup');
+            break;
+          case 'voice_audio':
+            handleVoiceAudio(message);
+            break;
+          case 'pong':
+            break;
+          default:
+            log(`Unhandled message type ${message.type}`);
+        }
+      } catch (error) {
+        console.error('Failed to parse message', error);
+      }
+    });
 
-    // Check if we have a previous session to restore
-    const savedCode = readSessionCookie();
-    if (savedCode && savedCode === currentSessionCode) {
-      linkStatusEl.textContent = 'Koneksi dipulihkan. Menunggu sinkronisasi...';
-      const result = await sendMessage({ type: 'restore_session', code: savedCode });
-      if (result) handleMessage(result);
-    } else {
-      const result = await sendMessage({ type: 'generate_code' });
-      if (result) handleMessage(result);
-    }
+    socket.addEventListener('close', (event) => {
+      log('Browser socket closed', { code: event.code, reason: event.reason });
+      rerollButtonEl.disabled = true;
+      
+      // Clear heartbeat
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
+      
+      // Stop media recorder but keep stream alive for reconnection
+      stopStreamingAudio();
+      setConnectionState('warning', 'Koneksi terputus');
+      
+      // Check if we should attempt reconnection
+      if (reconnectAttempts < maxReconnectAttempts) {
+        reconnectAttempts++;
+        const delay = Math.min(2000 * reconnectAttempts, 10000); // Max 10s delay
+        
+        setTimeout(() => {
+          log('Attempting to reconnect...', { attempt: reconnectAttempts });
+          linkStatusEl.textContent = `Koneksi terputus. Mencoba menyambung kembali (${reconnectAttempts}/${maxReconnectAttempts})...`;
+          setConnectionState('warning', `Menyambungkan ulang (${reconnectAttempts}/${maxReconnectAttempts})`);
+          connect();
+        }, delay);
+      } else {
+        linkStatusEl.textContent = 'Koneksi gagal. Silakan refresh halaman.';
+        log('Max reconnection attempts reached');
+        setConnectionState('error', 'Koneksi gagal');
+        resetSessionState();
+      }
+    });
+
+    socket.addEventListener('error', (error) => {
+      console.error('WebSocket error', error);
+      log('WebSocket error occurred');
+      setConnectionState('error', 'Kesalahan koneksi');
+    });
   };
 
   const uint8ToBase64 = (bytes) => {
@@ -1492,6 +1596,9 @@
   };
 
   rerollButtonEl.addEventListener('click', () => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
     rerollButtonEl.disabled = true;
     
     // Reset everything before requesting new code
@@ -1560,6 +1667,9 @@
     stopStreamingAudio();
     if (mediaStream) {
       mediaStream.getTracks().forEach(track => track.stop());
+    }
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.close();
     }
     // Cleanup all active audio
     activeSpeakers.forEach(audio => {
